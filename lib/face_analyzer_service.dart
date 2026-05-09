@@ -46,7 +46,6 @@ class FaceAnalyzerService {
     print(ratio.toStringAsFixed(3));
     // 2. Logic phân tích sâu
     if (ratio <= 1.15) {
-      dispose();
       return 'Không thể xác minh được';
     } else if (ratio < 1.168) {
       return 'Tròn (Round)';
