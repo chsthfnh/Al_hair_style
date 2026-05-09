@@ -43,19 +43,6 @@ class RecommendationData {
         'Kiểu tóc vuốt cao quá mức.',
       ],
     },
-    'Trái Tim (Heart)': {
-      'description':
-          'Trán rộng và cằm nhọn. Bạn cần tạo sự cân đối ở phần dưới khuôn mặt.',
-      'good_hairstyles': [
-        'Tóc Bob uốn cụp đuôi',
-        'Tóc mái dài sang hai bên',
-        'Tóc xoăn xõa vai',
-      ],
-      'bad_hairstyles': [
-        'Tóc ngắn vuốt ngược ra sau (lộ trán rộng)',
-        'Mái ngắn trên lông mày.',
-      ],
-    },
     'Kim Cương (Diamond)': {
       'description':
           'Gò má rộng, trán và cằm hẹp. Mục tiêu là làm hài hòa vùng gò má.',
@@ -65,6 +52,12 @@ class RecommendationData {
         'Tóc dài uốn lọn',
       ],
       'bad_hairstyles': ['Tóc Pixie quá ngắn', 'Kiểu tóc vén hết sau tai.'],
+    },
+    'Không thể xác minh được': {
+      'description':
+          'Vui lòng chụp chính diện khuôn mặt hoặc không để quá xa máy ảnh.',
+      'good_hairstyles': ['Không thể xác minh được'],
+      'bad_hairstyles': ['Không thể xác minh được'],
     },
   };
 }

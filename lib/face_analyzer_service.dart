@@ -43,14 +43,32 @@ class FaceAnalyzerService {
     double width = (maxX - minX).toDouble();
     double height = (maxY - minY).toDouble();
     double ratio = height / width;
-
+    print(ratio.toStringAsFixed(3));
     // 2. Logic phân tích sâu
-    if (ratio > 1.6) return 'Mặt Dài (Long)';
-    if (ratio < 1.1) return 'Tròn (Round)';
-    if (ratio > 1.35) return 'Trái Xoan (Oval)';
-
-    return 'Vuông (Square)';
+    if (ratio <= 1.15) {
+      dispose();
+      return 'Không thể xác minh được';
+    } else if (ratio < 1.168) {
+      return 'Tròn (Round)';
+    } else if (ratio <= 1.17) {
+      return 'Kim Cương (Diamond)';
+    } else if (ratio <= 1.18) {
+      return 'Mặt Dài (Long)';
+    } else if (ratio < 1.23) {
+      return 'Vuông (Square)';
+    } else if (ratio < 1.3) {
+      return 'Trái Xoan (Oval)';
+    } else {
+      return 'Không thể xác minh được';
+    }
   }
+
+  //Tron 1.166
+  //kc 1.169
+  //dai 1.174
+  //Vuong 1.224
+  //Oval 1.231;1.276
+  //KHL: 1.096;1.144;1.376;1.449
 
   Future<String> analyzeSkinTone(String imagePath) async {
     try {
