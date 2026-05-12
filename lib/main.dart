@@ -9,7 +9,7 @@ import 'result_screen.dart';
 void main() => runApp(const HairStyleAdvisorApp());
 
 class HairStyleAdvisorApp extends StatelessWidget {
-  const HairStyleAdvisorApp({Key? key}) : super(key: key);
+  const HairStyleAdvisorApp({super.key});
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -23,7 +23,7 @@ class HairStyleAdvisorApp extends StatelessWidget {
 }
 
 class AnalyzerScreen extends StatefulWidget {
-  const AnalyzerScreen({Key? key}) : super(key: key);
+  const AnalyzerScreen({super.key});
   @override
   State<AnalyzerScreen> createState() => _AnalyzerScreenState();
 }
@@ -43,32 +43,40 @@ class _AnalyzerScreenState extends State<AnalyzerScreen>
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _service.initModel();
   }
 
   Future<void> _pickImage(ImageSource source) async {
     final img = await ImagePicker().pickImage(source: source);
     if (img == null) return;
+
     setState(() {
       _image = img;
       _loading = true;
-      _points = [];
+      _points =
+          []; // Với Model TFLite tự train, chúng ta tạm chưa vẽ được các chấm
     });
 
-    final result = await _service.analyzeFaceShape(img.path);
-    if (result.points.isEmpty) {
-      setState(() => _loading = false);
-      _showError('Không nhận diện được khuôn mặt!');
-      return;
-    }
-    final tone = await _service.analyzeSkinTone(img.path);
+    // FIX 1: Chuyển path (String) thành File(path)
+    // FIX 2: result bây giờ chính là chuỗi tên dáng mặt (Ví dụ: "Oval")
+    final result = await _service.analyzeFaceShape(File(img.path));
+
+    // FIX 3: analyzeSkinTone cũng cần truyền vào File
+    final tone = await _service.analyzeSkinTone(File(img.path));
+
+    // Giả lập thời gian quét cho đẹp App
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
+
     setState(() => _loading = false);
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) =>
-            ResultScreen(faceShape: result.shape, skinTone: tone),
+        builder: (context) => ResultScreen(
+          faceShape: result, // result giờ là String luôn, không cần .shape
+          skinTone: tone,
+        ),
       ),
     );
   }
@@ -156,9 +164,9 @@ class _AnalyzerScreenState extends State<AnalyzerScreen>
                 height: 350,
                 width: 280,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.05),
+                  color: Colors.white.withValues(alpha: 0.05),
                   border: Border.all(
-                    color: Colors.tealAccent.withOpacity(0.5),
+                    color: Colors.tealAccent.withValues(alpha: 0.5),
                     width: 1,
                   ),
                   borderRadius: BorderRadius.circular(20),

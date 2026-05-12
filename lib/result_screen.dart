@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'recommendation_data.dart';
+import 'package:flutter/material.dart';
 
 class ResultScreen extends StatelessWidget {
   final String faceShape;
@@ -13,6 +14,7 @@ class ResultScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final advice = RecommendationData.hairAdvice[faceShape];
+    print("FACE: [$faceShape]");
     return Scaffold(
       appBar: AppBar(title: const Text('Kết quả tư vấn')),
       body: SingleChildScrollView(
@@ -27,20 +29,30 @@ class ResultScreen extends StatelessWidget {
                 color: Colors.tealAccent,
               ),
             ),
-            Text(skinTone, style: const TextStyle(color: Colors.orangeAccent)),
+            // Text(skinTone, style: const TextStyle(color: Colors.orangeAccent)),
             const Divider(height: 40),
             if (advice != null) ...[
               Text(advice['description'], style: const TextStyle(fontSize: 16)),
               const SizedBox(height: 20),
               _buildList(
-                'Kiểu tóc hợp:',
-                advice['good_hairstyles'],
-                Colors.greenAccent,
+                'Nam - Kiểu tóc hợp:',
+                advice['good_hairstyles']['Nam'],
+                Colors.green,
               ),
               _buildList(
-                'Kiểu tóc nên tránh:',
-                advice['bad_hairstyles'],
-                Colors.redAccent,
+                'Nữ - Kiểu tóc hợp:',
+                advice['good_hairstyles']['Nữ'],
+                Colors.green,
+              ),
+              _buildList(
+                'Nam - Kiểu tóc không phù hợp:',
+                advice['bad_hairstyles']['Nam'],
+                Colors.red,
+              ),
+              _buildList(
+                'Nữ - Kiểu tóc không phù hợp:',
+                advice['bad_hairstyles']['Nữ'],
+                Colors.red,
               ),
             ],
           ],

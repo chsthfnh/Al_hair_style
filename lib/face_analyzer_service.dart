@@ -1,87 +1,158 @@
 import 'dart:io';
-import 'dart:math';
+import 'dart:typed_data';
+import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // Để dùng debugPrint
+import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 
-class AnalysisResult {
-  final String shape;
-  final List<Point<int>> points;
-  AnalysisResult(this.shape, this.points);
-}
-
 class FaceAnalyzerService {
-  final FaceDetector _faceDetector = FaceDetector(
-    options: FaceDetectorOptions(enableContours: true),
-  );
+  Interpreter? _interpreter;
+  List<String>? _labels;
 
-  Future<AnalysisResult> analyzeFaceShape(String imagePath) async {
+  Future<void> initModel() async {
     try {
-      final inputImage = InputImage.fromFilePath(imagePath);
-      final faces = await _faceDetector.processImage(inputImage);
-
-      if (faces.isEmpty) return AnalysisResult('Không tìm thấy mặt', []);
-
-      final face = faces.first;
-      final points = face.contours[FaceContourType.face]?.points ?? [];
-
-      if (points.length < 10) return AnalysisResult('Dữ liệu không đủ', []);
-
-      final shape = _calculateComplexShape(points);
-      return AnalysisResult(shape, points);
+      _interpreter = await Interpreter.fromAsset(
+        'assets/face_shape_model.tflite',
+      );
+      final labelsData = await rootBundle.loadString('assets/labels.txt');
+      _labels = labelsData.split('\n').where((s) => s.isNotEmpty).toList();
+      debugPrint("✅ Model Ready!");
     } catch (e) {
-      return AnalysisResult('Lỗi hệ thống', []);
+      debugPrint("❌ Init Error: $e");
     }
   }
 
-  String _calculateComplexShape(List<Point<int>> points) {
-    // 1. Tính toán kích thước tổng quát
-    int minX = points.map((p) => p.x).reduce(min);
-    int maxX = points.map((p) => p.x).reduce(max);
-    int minY = points.map((p) => p.y).reduce(min);
-    int maxY = points.map((p) => p.y).reduce(max);
+  Future<String> analyzeFaceShape(File imageFile) async {
+    if (_interpreter == null) return "Model loading...";
 
-    double width = (maxX - minX).toDouble();
-    double height = (maxY - minY).toDouble();
-    double ratio = height / width;
-    print(ratio.toStringAsFixed(3));
-    // 2. Logic phân tích sâu
-    if (ratio <= 1.15) {
-      return 'Không thể xác minh được';
-    } else if (ratio < 1.168) {
-      return 'Tròn (Round)';
-    } else if (ratio <= 1.17) {
-      return 'Kim Cương (Diamond)';
-    } else if (ratio <= 1.18) {
-      return 'Mặt Dài (Long)';
-    } else if (ratio < 1.23) {
-      return 'Vuông (Square)';
-    } else if (ratio < 1.3) {
-      return 'Trái Xoan (Oval)';
-    } else {
-      return 'Không thể xác minh được';
+    // ===== BƯỚC 1: KIỂM TRA KHUÔN MẶT =====
+    final inputImage = InputImage.fromFile(imageFile);
+
+    final faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        performanceMode: FaceDetectorMode.accurate,
+        enableContours: true,
+        enableLandmarks: true,
+      ),
+    );
+
+    final faces = await faceDetector.processImage(inputImage);
+
+    // Không có mặt
+    if (faces.isEmpty) {
+      print('🛑 LỖI BƯỚC 1: ML Kit không tìm thấy khuôn mặt nào trong ảnh!');
+      return "Không thể xác minh được";
     }
+
+    // NẾU CÓ NHIỀU MẶT -> TÌM MẶT TO NHẤT (SỬA Ở ĐÂY 👇)
+    if (faces.length > 1) {
+      print(
+        '⚠️ CẢNH BÁO BƯỚC 1: Tìm thấy ${faces.length} khuôn mặt! Đang lọc lấy khuôn mặt to nhất...',
+      );
+      // Sắp xếp danh sách khuôn mặt theo diện tích (Rộng x Cao) giảm dần
+      faces.sort((a, b) {
+        double areaA = a.boundingBox.width * a.boundingBox.height;
+        double areaB = b.boundingBox.width * b.boundingBox.height;
+        return areaB.compareTo(areaA);
+      });
+    }
+
+    // Sau khi sắp xếp, mặt to nhất chắc chắn sẽ nằm ở vị trí đầu tiên (.first)
+    final face = faces.first;
+
+    // ===== BƯỚC 2: KIỂM TRA ĐỘ RÕ =====
+    print(
+      '📐 Thông số mặt: Rộng=${face.boundingBox.width}, Cao=${face.boundingBox.height}',
+    );
+    print(
+      '📐 Góc nghiêng: Y=${face.headEulerAngleY}, Z=${face.headEulerAngleZ}',
+    );
+
+    // mặt quá nhỏ
+    if (face.boundingBox.width < 120 || face.boundingBox.height < 120) {
+      print(
+        '🛑 LỖI BƯỚC 2: Khuôn mặt quá nhỏ (< 120px). Kích thước thật: ${face.boundingBox.width} x ${face.boundingBox.height}',
+      );
+      return "Không thể xác minh được";
+    }
+
+    // xoay quá nhiều
+    if ((face.headEulerAngleY ?? 0).abs() > 35 ||
+        (face.headEulerAngleZ ?? 0).abs() > 35) {
+      print('🛑 LỖI BƯỚC 2: Mặt bị nghiêng quá 35 độ!');
+      return "Không thể xác minh được";
+    }
+    // ===== BƯỚC 3: CẮT KHUÔN MẶT & CHẠY MODEL =====
+    final rawImage = img.decodeImage(await imageFile.readAsBytes());
+    if (rawImage == null) return "Không thể xác minh được";
+
+    // 1. Lấy tọa độ khuôn mặt gốc từ ML Kit
+    final boundingBox = face.boundingBox;
+
+    // 💡 THÊM PADDING: Mở rộng khung cắt ra 25% để lấy cả Tóc, Tai và Cổ
+    int paddingX = (boundingBox.width * 0.25).toInt();
+    int paddingY = (boundingBox.height * 0.25).toInt();
+
+    int x = boundingBox.left.toInt() - paddingX;
+    int y = boundingBox.top.toInt() - paddingY;
+    int w = boundingBox.width.toInt() + (paddingX * 2);
+    int h = boundingBox.height.toInt() + (paddingY * 2);
+
+    // 2. Đảm bảo khung cắt không bị tràn ra ngoài viền ảnh gốc (Tránh lỗi Crash)
+    x = x.clamp(0, rawImage.width);
+    y = y.clamp(0, rawImage.height);
+    w = w.clamp(0, rawImage.width - x);
+    h = h.clamp(0, rawImage.height - y);
+
+    // 3. CẮT LẤY KHUÔN MẶT ĐÃ MỞ RỘNG
+    img.Image croppedFace = img.copyCrop(
+      rawImage,
+      x: x,
+      y: y,
+      width: w,
+      height: h,
+    );
+
+    // 4. Bóp ảnh CẮT về chuẩn 224x224 cho AI
+    img.Image resized = img.copyResize(croppedFace, width: 224, height: 224);
+
+    // Tiếp tục đưa vào Model như cũ
+    var input = _imageToByteListFloat32(resized).reshape([1, 224, 224, 3]);
+    var output = [List<double>.filled(5, 0.0)];
+    _interpreter!.run(input, output);
+    List<double> probs = output[0];
+
+    // ===== BƯỚC 4: CONFIDENCE =====
+
+    double maxVal = probs.reduce((a, b) => a > b ? a : b);
+    print('maxVal ket qua la: $maxVal');
+
+    // Nếu AI không tự tin
+    if (maxVal < 0.25) {
+      return "Không thể xác minh được";
+    }
+    int maxIdx = probs.indexOf(maxVal);
+    print(maxIdx);
+    print(_labels![maxIdx].trim());
+    return _labels![maxIdx].trim();
   }
 
-  //Tron 1.166
-  //kc 1.169
-  //dai 1.174
-  //Vuong 1.224
-  //Oval 1.231;1.276
-  //KHL: 1.096;1.144;1.376;1.449
+  Float32List _imageToByteListFloat32(img.Image image) {
+    var buffer = Float32List(1 * 224 * 224 * 3);
+    int idx = 0;
+    for (var y = 0; y < 224; y++) {
+      for (var x = 0; x < 224; x++) {
+        var pixel = image.getPixel(x, y);
 
-  Future<String> analyzeSkinTone(String imagePath) async {
-    try {
-      final bytes = await File(imagePath).readAsBytes();
-      final image = img.decodeImage(bytes);
-      if (image == null) return 'Trung tính';
-      final p = image.getPixel(image.width ~/ 2, image.height ~/ 2);
-      return (p.r > p.g && p.r > p.b)
-          ? 'Warm Tone (Da ấm)'
-          : 'Cool Tone (Da lạnh)';
-    } catch (e) {
-      return 'Trung tính';
+        // SỬA TẠI ĐÂY: Truyền thẳng giá trị pixel 0-255 vào, để AI (TFLite) tự chuẩn hóa
+        buffer[idx++] = pixel.r.toDouble();
+        buffer[idx++] = pixel.g.toDouble();
+        buffer[idx++] = pixel.b.toDouble();
+      }
     }
+    return buffer;
   }
 
-  void dispose() => _faceDetector.close();
+  Future<String> analyzeSkinTone(File imageFile) async => "Neutral";
 }
